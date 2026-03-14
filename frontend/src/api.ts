@@ -83,6 +83,20 @@ export async function generateRole(extracted: Record<string, any>): Promise<{ ro
   return res.json()
 }
 
+export async function uploadResume(sessionId: string, file: File): Promise<{ session_id: string; resume_length: number; preview: string }> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${BASE}/sessions/${sessionId}/resume`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Upload failed' }))
+    throw new Error(err.detail || 'Upload failed')
+  }
+  return res.json()
+}
+
 export async function getScorecard(sessionId: string) {
   const res = await fetch(`${BASE}/sessions/${sessionId}/scorecard`)
   if (!res.ok) throw new Error('Scorecard not found')

@@ -29,6 +29,7 @@ async def init_db():
             id TEXT PRIMARY KEY,
             role_id TEXT NOT NULL,
             candidate_name TEXT,
+            resume_text TEXT,              -- Parsed text from uploaded resume
             status TEXT DEFAULT 'pending',  -- pending, active, completed
             started_at DATETIME,
             ended_at DATETIME,

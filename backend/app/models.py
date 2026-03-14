@@ -8,8 +8,8 @@ class Question(BaseModel):
 
 
 class RoleConfig(BaseModel):
-    style: str = "conversational"  # conversational | structured
-    follow_up_depth: int = 2
+    style: Optional[str] = "conversational"  # conversational | structured
+    follow_up_depth: Optional[int] = 2
     red_flags: list[str] = []
     green_flags: list[str] = []
 

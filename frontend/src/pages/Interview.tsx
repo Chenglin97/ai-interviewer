@@ -12,7 +12,7 @@ export default function Interview() {
   const wsUrl = `${protocol}://${window.location.host}/api/ws/interview/${sessionId}`
 
   const {
-    messages, listening, connected, agentSpeaking, thinking, liveTranscript,
+    messages, listening, connected, agentSpeaking, thinking, liveTranscript, sendCountdown,
     toggleListening, sendText,
   } = useVoiceChat({
     wsUrl,
@@ -64,7 +64,14 @@ export default function Interview() {
         ))}
         {liveTranscript && (
           <div className="message candidate" style={{ opacity: 0.5, fontStyle: 'italic' }}>
-            <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '0.25rem' }}>You</div>
+            <div className="flex justify-between" style={{ fontSize: '0.75rem', color: '#888', marginBottom: '0.25rem' }}>
+              <span>You</span>
+              {sendCountdown != null && (
+                <span style={{ color: sendCountdown <= 1 ? '#fca5a5' : '#fcd34d' }}>
+                  Sending in {sendCountdown.toFixed(1)}s
+                </span>
+              )}
+            </div>
             {liveTranscript}...
           </div>
         )}
@@ -92,9 +99,11 @@ export default function Interview() {
               ? 'Agent is speaking — talk to interrupt'
               : thinking
                 ? 'Processing your response...'
-                : liveTranscript
-                  ? 'Listening...'
-                  : 'Speak naturally — I\'m listening'}
+                : sendCountdown != null
+                  ? `Sending in ${sendCountdown.toFixed(1)}s — keep talking to reset`
+                  : liveTranscript
+                    ? 'Listening...'
+                    : 'Speak naturally — I\'m listening'}
           </div>
         ) : (
           <>

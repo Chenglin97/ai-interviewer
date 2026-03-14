@@ -54,10 +54,15 @@ The system prompt you generate should:
 - Define the interviewer's personality and tone based on the style
 - Include all the questions with clear priority ordering
 - Include specific follow-up strategies for each question
-- Include authenticity detection instructions tailored to the role
-- Include the green/red flag evaluation criteria
+- Include authenticity probing instructions (ask for specifics, not score them)
+- Use green/red flags to guide follow-up questions, NOT for live scoring
 - Feel like a real interviewer, not a robot reading from a script
 - Adapt follow-up depth and probing style to the role's seniority level
+
+CRITICAL: The agent must NOT evaluate or score the candidate during the interview.
+Its only job is to conduct a thorough, natural conversation. Evaluation happens
+separately after the interview, using the full transcript. The response format
+should only contain "spoken_response" and "next_action" — no scores.
 
 Output valid JSON:
 {
@@ -67,7 +72,14 @@ Output valid JSON:
 
 async def get_onboarding_response(conversation_history: list[dict]) -> dict:
     """Process employer's voice input and guide the onboarding conversation."""
-    return await chat_json(ONBOARDING_SYSTEM, conversation_history, temperature=0.7)
+    try:
+        return await chat_json(ONBOARDING_SYSTEM, conversation_history, temperature=0.7)
+    except Exception:
+        return {
+            "spoken_response": "Sorry, could you say that again?",
+            "status": "gathering",
+            "extracted_so_far": {},
+        }
 
 
 async def generate_agent_template(extracted: dict) -> str:
@@ -79,5 +91,6 @@ async def generate_agent_template(extracted: dict) -> str:
         TEMPLATE_GENERATOR_SYSTEM,
         [{"role": "user", "content": f"Generate an interviewer agent template for this role config:\n\n{config_summary}"}],
         temperature=0.5,
+        max_tokens=4096,
     )
     return result.get("agent_template", "")

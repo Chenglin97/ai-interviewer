@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  getRole, createSession, getRoleStats, getRoleSessions,
+  getRole, createSession, uploadResume, getRoleStats, getRoleSessions,
   type Role, type RoleStats, type SessionSummary,
 } from '../api'
 
@@ -19,6 +19,7 @@ export default function RoleDashboard() {
   const [stats, setStats] = useState<RoleStats | null>(null)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [candidateName, setCandidateName] = useState('')
+  const [resumeFile, setResumeFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -33,9 +34,12 @@ export default function RoleDashboard() {
     setLoading(true)
     try {
       const session = await createSession(roleId, candidateName || undefined)
+      if (resumeFile) {
+        await uploadResume(session.id, resumeFile)
+      }
       navigate(`/interview/${session.id}`)
-    } catch {
-      alert('Failed to start session')
+    } catch (e: any) {
+      alert(e.message || 'Failed to start session')
     } finally {
       setLoading(false)
     }
@@ -119,6 +123,22 @@ export default function RoleDashboard() {
           value={candidateName}
           onChange={(e) => setCandidateName(e.target.value)}
         />
+        <div style={{ marginBottom: '0.5rem' }}>
+          <label style={{ fontSize: '0.85rem', color: '#888', display: 'block', marginBottom: '0.25rem' }}>
+            Upload resume (PDF, DOCX, or TXT) — optional
+          </label>
+          <input
+            type="file"
+            accept=".pdf,.docx,.txt"
+            onChange={(e) => setResumeFile(e.target.files?.[0] || null)}
+            style={{ fontSize: '0.85rem' }}
+          />
+          {resumeFile && (
+            <span style={{ fontSize: '0.8rem', color: '#6ee7b7', marginLeft: '0.5rem' }}>
+              {resumeFile.name}
+            </span>
+          )}
+        </div>
         <div className="flex gap-1">
           <button onClick={startInterview} disabled={loading}>
             {loading ? 'Starting...' : 'Start Interview'}

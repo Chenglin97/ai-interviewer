@@ -7,12 +7,12 @@ from pathlib import Path
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import init_db, get_db
 from .models import RoleCreate, RoleResponse, SessionCreate, SessionResponse, Question, RoleConfig
-from .agent import build_system_prompt, get_agent_response, generate_scorecard
+from .agent import build_system_prompt, get_agent_response, generate_report
 from .onboarding_agent import get_onboarding_response, generate_agent_template
 from .voice import text_to_speech, speech_to_text
 from .llm import get_spend_status
@@ -139,13 +139,63 @@ async def get_scorecard(session_id: str):
     card = await cursor.fetchone()
     await db.close()
     if not card:
-        raise HTTPException(404, "Scorecard not found")
-    return {
-        "session_id": card["session_id"],
-        "summary": card["summary"],
-        "overall_score": card["overall_score"],
-        "per_question": json.loads(card["per_question"]),
-    }
+        raise HTTPException(404, "Report not found")
+    report = json.loads(card["per_question"])  # full report stored here
+    report["session_id"] = card["session_id"]
+    return report
+
+
+# ─── Resume Upload ───────────────────────────────────────────────────────────
+
+
+def _parse_pdf(data: bytes) -> str:
+    import io
+    from PyPDF2 import PdfReader
+    reader = PdfReader(io.BytesIO(data))
+    return "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+
+
+def _parse_docx(data: bytes) -> str:
+    import io
+    from docx import Document
+    doc = Document(io.BytesIO(data))
+    return "\n".join(p.text for p in doc.paragraphs).strip()
+
+
+@app.post("/api/sessions/{session_id}/resume")
+async def upload_resume(session_id: str, file: UploadFile = File(...)):
+    """Upload a resume (PDF or DOCX) and attach parsed text to the session."""
+    db = await get_db()
+    cursor = await db.execute("SELECT id FROM sessions WHERE id = ?", (session_id,))
+    if not await cursor.fetchone():
+        await db.close()
+        raise HTTPException(404, "Session not found")
+
+    data = await file.read()
+    filename = (file.filename or "").lower()
+
+    if filename.endswith(".pdf"):
+        text = _parse_pdf(data)
+    elif filename.endswith(".docx"):
+        text = _parse_docx(data)
+    elif filename.endswith(".txt"):
+        text = data.decode("utf-8", errors="ignore").strip()
+    else:
+        await db.close()
+        raise HTTPException(400, "Unsupported file type. Upload PDF, DOCX, or TXT.")
+
+    if not text:
+        await db.close()
+        raise HTTPException(400, "Could not extract text from file.")
+
+    await db.execute(
+        "UPDATE sessions SET resume_text = ? WHERE id = ?",
+        (text, session_id),
+    )
+    await db.commit()
+    await db.close()
+
+    return {"session_id": session_id, "resume_length": len(text), "preview": text[:500]}
 
 
 # ─── Role Stats & Session Review ─────────────────────────────────────────────
@@ -234,7 +284,6 @@ async def get_session_transcript(session_id: str):
         {
             "speaker": r["speaker"],
             "text": r["text"],
-            "scores": json.loads(r["scores"]) if r["scores"] else None,
             "timestamp": r["timestamp"],
         }
         for r in rows
@@ -425,8 +474,13 @@ async def interview_ws(ws: WebSocket, session_id: str):
         config = RoleConfig(**json.loads(role["config"]))
         system_prompt = build_system_prompt(role["title"], role["company_context"], questions, config)
 
+    # Inject resume context if one was uploaded
+    resume_text = session["resume_text"] if "resume_text" in session.keys() else None
+    if resume_text:
+        system_prompt += f"\n\nCANDIDATE RESUME:\n{resume_text}\n\nUse this resume to personalize your questions — reference their specific experience, ask about projects they listed, and probe areas where the resume is vague. Do NOT just read the resume back to them."
+
     conversation_history: list[dict] = [
-        {"role": "user", "content": "Hi, I'm ready for the interview."}
+        {"role": "user", "content": "Hi, I'm ready for the interview. Please introduce yourself briefly and then ask me your first question."}
     ]
 
     # Mark session active
@@ -494,10 +548,9 @@ async def interview_ws(ws: WebSocket, session_id: str):
 
                 # Save agent transcript
                 db = await get_db()
-                scores = agent_resp.get("internal_scores", {})
                 await db.execute(
-                    "INSERT INTO transcripts (session_id, speaker, text, scores) VALUES (?, ?, ?, ?)",
-                    (session_id, "agent", spoken, json.dumps(scores)),
+                    "INSERT INTO transcripts (session_id, speaker, text) VALUES (?, ?, ?)",
+                    (session_id, "agent", spoken),
                 )
                 await db.commit()
                 await db.close()
@@ -506,7 +559,6 @@ async def interview_ws(ws: WebSocket, session_id: str):
                 await ws.send_json({
                     "type": "agent_text",
                     "text": spoken,
-                    "scores": scores,
                     "next_action": agent_resp.get("next_action", "follow_up"),
                 })
 
@@ -518,16 +570,16 @@ async def interview_ws(ws: WebSocket, session_id: str):
 
                 # Check if interview should end
                 if agent_resp.get("next_action") == "wrap_up":
-                    # Generate scorecard
-                    scorecard = await generate_scorecard(system_prompt, conversation_history)
+                    # Generate comprehensive post-interview report
+                    report = await generate_report(system_prompt, conversation_history)
                     db = await get_db()
                     await db.execute(
                         "INSERT INTO scorecards (session_id, summary, overall_score, per_question) VALUES (?, ?, ?, ?)",
                         (
                             session_id,
-                            scorecard.get("summary", ""),
-                            scorecard.get("overall_score", 0),
-                            json.dumps(scorecard.get("per_question", [])),
+                            report.get("executive_summary", ""),
+                            report.get("overall_score", 0),
+                            json.dumps(report),
                         ),
                     )
                     await db.execute(
@@ -537,7 +589,7 @@ async def interview_ws(ws: WebSocket, session_id: str):
                     await db.commit()
                     await db.close()
 
-                    await ws.send_json({"type": "interview_complete", "scorecard": scorecard})
+                    await ws.send_json({"type": "interview_complete", "report": report})
                     await ws.close()
                     return
 

@@ -12,7 +12,8 @@ interface UseVoiceChatOptions {
   onAgentMessage?: (data: any) => void
 }
 
-const SILENCE_TIMEOUT_MS = 1500
+const SILENCE_TIMEOUT_MS = 3000 // 3s of silence before sending
+const COUNTDOWN_INTERVAL_MS = 100 // Update countdown every 100ms
 
 export function useVoiceChat({ wsUrl, onComplete, onAgentMessage }: UseVoiceChatOptions) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -21,6 +22,7 @@ export function useVoiceChat({ wsUrl, onComplete, onAgentMessage }: UseVoiceChat
   const [agentSpeaking, setAgentSpeaking] = useState(false)
   const [thinking, setThinking] = useState(false)
   const [liveTranscript, setLiveTranscript] = useState('')
+  const [sendCountdown, setSendCountdown] = useState<number | null>(null) // seconds remaining
 
   const wsRef = useRef<WebSocket | null>(null)
   const recognitionRef = useRef<any>(null)
@@ -38,47 +40,96 @@ export function useVoiceChat({ wsUrl, onComplete, onAgentMessage }: UseVoiceChat
 
   // Silence timeout refs
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const silenceStartRef = useRef<number>(0)
   const pendingTranscriptRef = useRef('')
+  const justSentRef = useRef(false) // prevent duplicate sends
 
   // Track what the agent was saying when interrupted
   const lastAgentTextRef = useRef('')
   const agentWasInterruptedRef = useRef(false)
 
+  // --- Clear all timers ---
+  const clearTimers = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current)
+      countdownTimerRef.current = null
+    }
+    setSendCountdown(null)
+  }, [])
+
   // --- Interrupt: stop agent audio immediately ---
   const interruptAgent = useCallback(() => {
     if (!playingRef.current && audioQueueRef.current.length === 0) return
 
-    // Stop current audio
     if (currentSourceRef.current) {
       try { currentSourceRef.current.stop() } catch {}
       currentSourceRef.current = null
     }
 
-    // Clear queued audio
     audioQueueRef.current = []
     playingRef.current = false
     setAgentSpeaking(false)
     agentWasInterruptedRef.current = true
   }, [])
 
+  // --- Send helper (with dedup) ---
+  const sendMessage = useCallback((text: string) => {
+    if (!text.trim() || !wsRef.current?.readyState || wsRef.current.readyState !== WebSocket.OPEN) return
+
+    let payload: any = { text: text.trim() }
+    if (agentWasInterruptedRef.current && lastAgentTextRef.current) {
+      payload.interrupted_context = `[Note: The user interrupted while you were saying: "${lastAgentTextRef.current}". They may be responding to part of what you said or wanting to move on.]`
+      agentWasInterruptedRef.current = false
+    }
+
+    wsRef.current.send(JSON.stringify(payload))
+    setMessages((prev) => [...prev, { speaker: 'user', text: text.trim() }])
+    setThinking(true)
+    justSentRef.current = true
+    // Reset after a short window to allow next send
+    setTimeout(() => { justSentRef.current = false }, 500)
+  }, [])
+
   // --- Send pending transcript ---
   const flushTranscript = useCallback(() => {
+    clearTimers()
+    if (justSentRef.current) {
+      // Already sent via isFinal — skip duplicate
+      pendingTranscriptRef.current = ''
+      setLiveTranscript('')
+      return
+    }
     const text = pendingTranscriptRef.current.trim()
-    if (text && wsRef.current?.readyState === WebSocket.OPEN) {
-      // If agent was interrupted, prepend context
-      let payload: any = { text }
-      if (agentWasInterruptedRef.current && lastAgentTextRef.current) {
-        payload.interrupted_context = `[Note: The user interrupted while you were saying: "${lastAgentTextRef.current}". They may be responding to part of what you said or wanting to move on.]`
-        agentWasInterruptedRef.current = false
-      }
-
-      wsRef.current.send(JSON.stringify(payload))
-      setMessages((prev) => [...prev, { speaker: 'user', text }])
-      setThinking(true)
+    if (text) {
+      sendMessage(text)
     }
     pendingTranscriptRef.current = ''
     setLiveTranscript('')
-  }, [])
+  }, [clearTimers, sendMessage])
+
+  // --- Start silence countdown ---
+  const startSilenceCountdown = useCallback(() => {
+    clearTimers()
+
+    silenceStartRef.current = Date.now()
+
+    // Countdown display
+    countdownTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - silenceStartRef.current
+      const remaining = Math.max(0, (SILENCE_TIMEOUT_MS - elapsed) / 1000)
+      setSendCountdown(Math.round(remaining * 10) / 10)
+    }, COUNTDOWN_INTERVAL_MS)
+
+    // Actual send timer
+    silenceTimerRef.current = setTimeout(() => {
+      flushTranscript()
+    }, SILENCE_TIMEOUT_MS)
+  }, [clearTimers, flushTranscript])
 
   // --- Audio playback queue ---
   const playNext = useCallback(async () => {
@@ -192,37 +243,23 @@ export function useVoiceChat({ wsUrl, onComplete, onAgentMessage }: UseVoiceChat
         interruptAgent()
       }
 
-      // Clear any pending silence timer
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current)
-        silenceTimerRef.current = null
-      }
-
       if (final.trim()) {
+        // Got a final result — send immediately and cancel any pending timer
+        clearTimers()
         pendingTranscriptRef.current = ''
         setLiveTranscript('')
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          let payload: any = { text: final.trim() }
-          if (agentWasInterruptedRef.current && lastAgentTextRef.current) {
-            payload.interrupted_context = `[Note: The user interrupted while you were saying: "${lastAgentTextRef.current}". They may be responding to part of what you said or wanting to move on.]`
-            agentWasInterruptedRef.current = false
-          }
-          wsRef.current.send(JSON.stringify(payload))
-          setMessages((prev) => [...prev, { speaker: 'user', text: final.trim() }])
-          setThinking(true)
-        }
+        sendMessage(final.trim())
       } else if (interim) {
+        // Interim result — accumulate and reset the silence countdown
         pendingTranscriptRef.current = interim
         setLiveTranscript(interim)
-
-        silenceTimerRef.current = setTimeout(() => {
-          flushTranscript()
-        }, SILENCE_TIMEOUT_MS)
+        startSilenceCountdown()
       }
     }
 
     recognition.onend = () => {
-      if (pendingTranscriptRef.current.trim()) {
+      // If there's pending text and no timer running, flush it
+      if (pendingTranscriptRef.current.trim() && !silenceTimerRef.current) {
         flushTranscript()
       }
       if (shouldListenRef.current) {
@@ -247,23 +284,18 @@ export function useVoiceChat({ wsUrl, onComplete, onAgentMessage }: UseVoiceChat
     setListening(true)
 
     try { recognition.start() } catch {}
-  }, [flushTranscript, interruptAgent])
+  }, [flushTranscript, interruptAgent, sendMessage, startSilenceCountdown, clearTimers])
 
   const stopListening = useCallback(() => {
-    // Mute only — stop mic input but don't end the conversation
     shouldListenRef.current = false
     setListening(false)
-    // Discard any pending speech (user is muting, not sending)
     pendingTranscriptRef.current = ''
     setLiveTranscript('')
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current)
-      silenceTimerRef.current = null
-    }
+    clearTimers()
     if (recognitionRef.current) {
       try { recognitionRef.current.stop() } catch {}
     }
-  }, [])
+  }, [clearTimers])
 
   const toggleListening = useCallback(() => {
     if (listening) {
@@ -275,18 +307,13 @@ export function useVoiceChat({ wsUrl, onComplete, onAgentMessage }: UseVoiceChat
 
   const sendText = useCallback((text: string) => {
     if (!text.trim() || !wsRef.current) return
-    // Interrupt agent if speaking
     interruptAgent()
-    wsRef.current.send(JSON.stringify({ text: text.trim() }))
-    setMessages((prev) => [...prev, { speaker: 'user', text: text.trim() }])
-    setThinking(true)
-  }, [interruptAgent])
+    sendMessage(text.trim())
+  }, [interruptAgent, sendMessage])
 
   useEffect(() => {
-    return () => {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
-    }
-  }, [])
+    return () => { clearTimers() }
+  }, [clearTimers])
 
   return {
     messages,
@@ -295,6 +322,7 @@ export function useVoiceChat({ wsUrl, onComplete, onAgentMessage }: UseVoiceChat
     agentSpeaking,
     thinking,
     liveTranscript,
+    sendCountdown,
     toggleListening,
     sendText,
   }

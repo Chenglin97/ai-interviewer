@@ -107,6 +107,7 @@ async def chat(
     system: str,
     messages: list[dict],
     temperature: float = 0.7,
+    max_tokens: int = 1024,
 ) -> str:
     """Send a chat completion request with rate limiting and spend tracking."""
     await _check_budget()
@@ -114,7 +115,7 @@ async def chat(
 
     response = await client.messages.create(
         model=MODEL,
-        max_tokens=1024,
+        max_tokens=max_tokens,
         system=system,
         messages=messages,
         temperature=temperature,
@@ -130,11 +131,12 @@ async def chat_json(
     system: str,
     messages: list[dict],
     temperature: float = 0.7,
+    max_tokens: int = 1024,
 ) -> dict:
     """Send a chat completion and parse JSON response."""
     system_with_json = system.rstrip() + "\n\nIMPORTANT: Respond with valid JSON only. No markdown fences, no extra text."
 
-    text = await chat(system_with_json, messages, temperature)
+    text = await chat(system_with_json, messages, temperature, max_tokens)
 
     # Strip markdown fences if present
     text = text.strip()
