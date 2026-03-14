@@ -3,12 +3,8 @@ Interview agent — builds system prompts from role config and manages
 the conversational interview loop via an LLM.
 """
 
-import json
-from openai import AsyncOpenAI
-from .models import RoleCreate, RoleConfig, Question
-
-# Uses OpenAI-compatible endpoint — swap base_url for your infra gateway if needed
-client = AsyncOpenAI()
+from .models import RoleConfig, Question
+from .llm import chat_json
 
 SYSTEM_TEMPLATE = """You are a professional interviewer conducting a voice interview for the role: {title}
 
@@ -47,9 +43,7 @@ After processing each candidate response, output valid JSON:
     "notes": "brief internal note"
   }},
   "next_action": "follow_up | next_question | wrap_up"
-}}
-
-IMPORTANT: Always respond with valid JSON only. No markdown, no extra text."""
+}}"""
 
 
 def build_system_prompt(
@@ -77,17 +71,7 @@ async def get_agent_response(
     conversation_history: list[dict],
 ) -> dict:
     """Send conversation to LLM and get structured interview response."""
-    messages = [{"role": "system", "content": system_prompt}] + conversation_history
-
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=messages,
-        temperature=0.7,
-        response_format={"type": "json_object"},
-    )
-
-    content = response.choices[0].message.content
-    return json.loads(content)
+    return await chat_json(system_prompt, conversation_history, temperature=0.7)
 
 
 async def generate_scorecard(
@@ -114,17 +98,5 @@ Output valid JSON:
   "recommendation": "strong_yes | yes | maybe | no | strong_no"
 }"""
 
-    messages = (
-        [{"role": "system", "content": system_prompt}]
-        + conversation_history
-        + [{"role": "user", "content": scorecard_prompt}]
-    )
-
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=messages,
-        temperature=0.3,
-        response_format={"type": "json_object"},
-    )
-
-    return json.loads(response.choices[0].message.content)
+    messages = conversation_history + [{"role": "user", "content": scorecard_prompt}]
+    return await chat_json(system_prompt, messages, temperature=0.3)

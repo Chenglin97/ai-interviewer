@@ -17,7 +17,7 @@ export default function App() {
       </p>
 
       <Link to="/roles/new">
-        <button style={{ marginBottom: '2rem' }}>+ Create Interview Role</button>
+        <button style={{ marginBottom: '2rem' }}>🎙 Set Up New Interviewer</button>
       </Link>
 
       {roles.length === 0 ? (

@@ -1,19 +1,18 @@
 """
-Voice integration using Smallest AI — TTS (Waves) and STT (Lightning).
+Voice integration using Smallest AI — TTS (Lightning) and STT (Pulse).
 """
 
 import httpx
 import os
 
 SMALLEST_API_KEY = os.getenv("SMALLEST_API_KEY", "")
-SMALLEST_BASE_URL = "https://waves-api.smallest.ai/api/v1"
 
 
-async def text_to_speech(text: str, voice: str = "emily") -> bytes:
-    """Convert text to speech audio using Smallest AI Waves TTS."""
+async def text_to_speech(text: str, voice: str = "magnus") -> bytes:
+    """Convert text to speech audio using Smallest AI Lightning TTS."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
-            f"{SMALLEST_BASE_URL}/lightning/get_speech",
+            "https://api.smallest.ai/waves/v1/lightning-v3.1/get_speech",
             headers={
                 "Authorization": f"Bearer {SMALLEST_API_KEY}",
                 "Content-Type": "application/json",
@@ -22,7 +21,7 @@ async def text_to_speech(text: str, voice: str = "emily") -> bytes:
                 "text": text,
                 "voice_id": voice,
                 "sample_rate": 24000,
-                "speed": 1.0,
+                "output_format": "wav",
             },
         )
         response.raise_for_status()
@@ -30,10 +29,11 @@ async def text_to_speech(text: str, voice: str = "emily") -> bytes:
 
 
 async def speech_to_text(audio_bytes: bytes) -> str:
-    """Transcribe audio using Smallest AI Lightning STT."""
+    """Transcribe audio using Smallest AI Pulse STT."""
     async with httpx.AsyncClient(timeout=30.0) as client:
+        # Pulse accepts file upload
         response = await client.post(
-            f"{SMALLEST_BASE_URL}/lightning/get_text",
+            "https://api.smallest.ai/waves/v1/pulse/get_text?language=en",
             headers={
                 "Authorization": f"Bearer {SMALLEST_API_KEY}",
             },
