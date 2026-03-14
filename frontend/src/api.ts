@@ -1,0 +1,80 @@
+const BASE = '/api'
+
+export interface Question {
+  text: string
+  weight: number
+}
+
+export interface RoleConfig {
+  style: string
+  follow_up_depth: number
+  red_flags: string[]
+  green_flags: string[]
+}
+
+export interface Role {
+  id: string
+  title: string
+  company_context: string | null
+  questions: Question[]
+  config: RoleConfig
+  created_at: string
+}
+
+export interface Session {
+  id: string
+  role_id: string
+  candidate_name: string | null
+  status: string
+  started_at: string | null
+  ended_at: string | null
+}
+
+export async function createRole(data: {
+  title: string
+  company_context?: string
+  questions: Question[]
+  config?: Partial<RoleConfig>
+}): Promise<Role> {
+  const res = await fetch(`${BASE}/roles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Failed to create role')
+  return res.json()
+}
+
+export async function listRoles(): Promise<Role[]> {
+  const res = await fetch(`${BASE}/roles`)
+  if (!res.ok) throw new Error('Failed to list roles')
+  return res.json()
+}
+
+export async function getRole(id: string): Promise<Role> {
+  const res = await fetch(`${BASE}/roles/${id}`)
+  if (!res.ok) throw new Error('Role not found')
+  return res.json()
+}
+
+export async function createSession(roleId: string, candidateName?: string): Promise<Session> {
+  const res = await fetch(`${BASE}/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role_id: roleId, candidate_name: candidateName }),
+  })
+  if (!res.ok) throw new Error('Failed to create session')
+  return res.json()
+}
+
+export async function getSession(id: string): Promise<Session> {
+  const res = await fetch(`${BASE}/sessions/${id}`)
+  if (!res.ok) throw new Error('Session not found')
+  return res.json()
+}
+
+export async function getScorecard(sessionId: string) {
+  const res = await fetch(`${BASE}/sessions/${sessionId}/scorecard`)
+  if (!res.ok) throw new Error('Scorecard not found')
+  return res.json()
+}
