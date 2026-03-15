@@ -43,4 +43,4 @@ Open http://localhost:3000
 ## API Keys Needed
 
 - `OPENAI_API_KEY` — OpenAI API key
-- `SMALLEST_API_KEY` — Get from [app.smallest.ai](https://app.smallest.ai), use coupon `HACKSPRINT2-VNCCTHMP`
+- `SMALLEST_API_KEY` — Get from [app.smallest.ai](https://app.smallest.ai)
