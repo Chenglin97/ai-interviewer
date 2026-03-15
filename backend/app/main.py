@@ -480,7 +480,7 @@ async def interview_ws(ws: WebSocket, session_id: str):
         system_prompt += f"\n\nCANDIDATE RESUME:\n{resume_text}\n\nUse this resume to personalize your questions — reference their specific experience, ask about projects they listed, and probe areas where the resume is vague. Do NOT just read the resume back to them."
 
     conversation_history: list[dict] = [
-        {"role": "user", "content": "Hi, I'm ready for the interview. Please introduce yourself briefly and then ask me your first question."}
+        {"role": "user", "content": "Hey, ready when you are."}
     ]
 
     # Mark session active
