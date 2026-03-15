@@ -16,9 +16,14 @@ export default function App() {
         Create intelligent voice interviewers that adapt, probe, and detect authenticity.
       </p>
 
-      <Link to="/roles/new">
-        <button style={{ marginBottom: '2rem' }}>+ Create Interview Role</button>
-      </Link>
+      <div className="flex gap-1" style={{ marginBottom: '2rem' }}>
+        <Link to="/roles/new">
+          <button>Set Up New Interviewer</button>
+        </Link>
+        <Link to="/careers">
+          <button className="secondary">Candidate Portal</button>
+        </Link>
+      </div>
 
       {roles.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', color: '#666' }}>

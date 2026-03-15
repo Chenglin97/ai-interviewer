@@ -21,6 +21,7 @@ async def init_db():
             company_context TEXT,
             questions TEXT NOT NULL,  -- JSON array
             config TEXT,             -- JSON object (style, follow_up_depth, flags)
+            agent_template TEXT,     -- Generated system prompt for the interviewer agent
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -28,6 +29,7 @@ async def init_db():
             id TEXT PRIMARY KEY,
             role_id TEXT NOT NULL,
             candidate_name TEXT,
+            resume_text TEXT,              -- Parsed text from uploaded resume
             status TEXT DEFAULT 'pending',  -- pending, active, completed
             started_at DATETIME,
             ended_at DATETIME,

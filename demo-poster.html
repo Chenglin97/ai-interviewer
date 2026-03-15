@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Interviewer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #000;
+    color: #fff;
+    min-height: 100vh;
+  }
+
+  .poster {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 4rem 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .pill {
+    display: inline-block;
+    background: rgba(99,102,241,0.12);
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 100px;
+    padding: 0.4rem 1.2rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #a78bfa;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 2rem;
+  }
+
+  h1 {
+    font-size: 5rem;
+    font-weight: 900;
+    line-height: 1.0;
+    letter-spacing: -0.04em;
+    margin-bottom: 1.5rem;
+  }
+  h1 .gradient {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6, #c084fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .sub {
+    font-size: 1.35rem;
+    color: #555;
+    max-width: 580px;
+    line-height: 1.6;
+    margin-bottom: 3.5rem;
+  }
+  .sub em {
+    color: #999;
+    font-style: normal;
+    font-weight: 600;
+  }
+
+  /* ── Before / After ── */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    width: 100%;
+    margin-bottom: 3.5rem;
+  }
+  .side {
+    padding: 2rem;
+    border-radius: 20px;
+    text-align: left;
+  }
+  .side-old {
+    background: #080808;
+    border: 1px solid #151515;
+  }
+  .side-new {
+    background: linear-gradient(160deg, rgba(99,102,241,0.06), rgba(139,92,246,0.1));
+    border: 1px solid rgba(99,102,241,0.2);
+  }
+  .side-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-weight: 800;
+    margin-bottom: 1.25rem;
+  }
+  .side-old .side-label { color: #333; }
+  .side-new .side-label { color: #6366f1; }
+
+  .side ul {
+    list-style: none;
+    padding: 0;
+  }
+  .side li {
+    font-size: 1.05rem;
+    padding: 0.6rem 0;
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+    line-height: 1.4;
+  }
+  .side-old li { color: #333; }
+  .side-new li { color: #ccc; }
+  .side li .m { flex-shrink: 0; font-size: 1.1rem; }
+  .side-old li .m { color: #2a2a2a; }
+  .side-new li .m { color: #6366f1; }
+
+  /* ── How it works — minimal ── */
+  .steps {
+    display: flex;
+    gap: 0;
+    width: 100%;
+    margin-bottom: 3.5rem;
+  }
+  .step {
+    flex: 1;
+    padding: 1.5rem 1rem;
+    position: relative;
+  }
+  .step:not(:last-child)::after {
+    content: '>';
+    position: absolute;
+    right: -0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #222;
+    font-size: 1.5rem;
+    font-weight: 300;
+  }
+  .step .emoji {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+  .step h3 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin-bottom: 0.2rem;
+  }
+  .step p {
+    font-size: 0.75rem;
+    color: #444;
+    line-height: 1.4;
+  }
+
+  /* ── Bottom ── */
+  .bottom {
+    padding-top: 2rem;
+    border-top: 1px solid #111;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .bottom .who {
+    font-size: 0.85rem;
+    color: #444;
+  }
+  .bottom .who strong {
+    color: #888;
+  }
+  .bottom a {
+    display: inline-block;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    padding: 0.75rem 2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .partners {
+    font-size: 0.75rem;
+    color: #333;
+  }
+  .partners span {
+    color: #555;
+    font-weight: 600;
+  }
+
+  @media print {
+    body { background: #000; }
+    h1 { font-size: 3.5rem; }
+  }
+</style>
+</head>
+<body>
+<div class="poster">
+
+  <div class="pill">Voice HackSprint 2.0</div>
+
+  <h1>Your next hire<br>interviews <span class="gradient">itself.</span></h1>
+
+  <div class="sub">
+    An AI that <em>talks to candidates</em>, asks follow-ups,
+    catches BS answers, and tells you who to hire.
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="emoji">🎙</div>
+      <h3>You talk</h3>
+      <p>Tell it what role you're hiring for. Voice, not forms.</p>
+    </div>
+    <div class="step">
+      <div class="emoji">🤖</div>
+      <h3>It builds</h3>
+      <p>Custom AI interviewer with your questions and standards.</p>
+    </div>
+    <div class="step">
+      <div class="emoji">💬</div>
+      <h3>They interview</h3>
+      <p>Candidates have a real voice conversation. Anytime, anywhere.</p>
+    </div>
+    <div class="step">
+      <div class="emoji">📋</div>
+      <h3>You decide</h3>
+      <p>Full report. Who's real, who's not. Done.</p>
+    </div>
+  </div>
+
+  <div class="compare">
+    <div class="side side-old">
+      <div class="side-label">Without this</div>
+      <ul>
+        <li><span class="m">&#x2717;</span> 10+ hours/week on screening calls</li>
+        <li><span class="m">&#x2717;</span> Every interviewer asks different things</li>
+        <li><span class="m">&#x2717;</span> Candidates prep with ChatGPT and you can't tell</li>
+        <li><span class="m">&#x2717;</span> "Thumbs up" with zero evidence</li>
+      </ul>
+    </div>
+    <div class="side side-new">
+      <div class="side-label">With this</div>
+      <ul>
+        <li><span class="m">&#x2713;</span> Setup in 2 minutes, runs 24/7</li>
+        <li><span class="m">&#x2713;</span> Same depth, same bar, every time</li>
+        <li><span class="m">&#x2713;</span> Probes rehearsed answers until they break</li>
+        <li><span class="m">&#x2713;</span> Detailed report with evidence from every answer</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="who"><strong>Chenglin Wei</strong> &middot; TopifyAI</div>
+    <div class="partners">Powered by <span>Smallest AI</span> + <span>Claude</span> + <span>Entelligence</span></div>
+    <a href="https://github.com/Chenglin97/ai-interviewer">See it live &rarr;</a>
+  </div>
+
+</div>
+</body>
+</html>

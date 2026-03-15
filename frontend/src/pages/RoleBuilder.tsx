@@ -1,182 +1,288 @@
-import { useState } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createRole, type Question } from '../api'
+import { useVoiceChat } from '../hooks/useVoiceChat'
+import { generateRole } from '../api'
+
+interface ExtractedData {
+  title?: string
+  company_context?: string
+  questions?: Array<{ text: string; weight: number }>
+  style?: string
+  follow_up_depth?: number
+  green_flags?: string[]
+  red_flags?: string[]
+}
+
+const STORAGE_KEY = 'onboarding_draft'
+
+function loadDraft(): { extracted: ExtractedData; status: string } | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+function saveDraft(extracted: ExtractedData, status: string) {
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ extracted, status }))
+}
+
+function clearDraft() {
+  sessionStorage.removeItem(STORAGE_KEY)
+}
 
 export default function RoleBuilder() {
   const navigate = useNavigate()
-  const [title, setTitle] = useState('')
-  const [context, setContext] = useState('')
-  const [questions, setQuestions] = useState<Question[]>([{ text: '', weight: 1 }])
-  const [style, setStyle] = useState('conversational')
-  const [followUpDepth, setFollowUpDepth] = useState(2)
-  const [greenFlags, setGreenFlags] = useState('')
-  const [redFlags, setRedFlags] = useState('')
-  const [loading, setLoading] = useState(false)
+  const transcriptRef = useRef<HTMLDivElement>(null)
+  const [textInput, setTextInput] = useState('')
+  const draft = loadDraft()
+  const [extracted, setExtracted] = useState<ExtractedData>(draft?.extracted ?? {})
+  const [status, setStatus] = useState(draft?.status ?? 'gathering')
+  const [generating, setGenerating] = useState(false)
+  const [resumed, setResumed] = useState(!!draft)
 
-  const addQuestion = () => setQuestions([...questions, { text: '', weight: 1 }])
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const wsUrl = `${protocol}://${window.location.host}/api/ws/onboarding`
 
-  const updateQuestion = (i: number, field: keyof Question, value: string | number) => {
-    const updated = [...questions]
-    updated[i] = { ...updated[i], [field]: value }
-    setQuestions(updated)
+  const {
+    messages, listening, connected, agentSpeaking, thinking, liveTranscript, sendCountdown,
+    toggleListening, sendText,
+  } = useVoiceChat({
+    wsUrl,
+    onComplete: (data) => {
+      if (data.type === 'onboarding_complete') {
+        clearDraft()
+        navigate(`/roles/${data.role_id}`)
+      }
+    },
+    onAgentMessage: (data) => {
+      if (data.extracted) {
+        setExtracted(data.extracted)
+        saveDraft(data.extracted, data.status || 'gathering')
+      }
+      if (data.status) setStatus(data.status)
+      setResumed(false) // no longer showing resumed banner once new data comes in
+    },
+  })
+
+  useEffect(() => {
+    transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, liveTranscript])
+
+  const handleSendText = () => {
+    sendText(textInput)
+    setTextInput('')
   }
 
-  const removeQuestion = (i: number) => {
-    if (questions.length > 1) setQuestions(questions.filter((_, idx) => idx !== i))
-  }
+  const canGenerate = !!(extracted.title && extracted.questions?.length)
 
-  const handleSubmit = async () => {
-    if (!title.trim() || !questions.some((q) => q.text.trim())) return
-    setLoading(true)
+  const handleGenerateAgent = async () => {
+    if (!canGenerate) return
+    setGenerating(true)
     try {
-      const role = await createRole({
-        title,
-        company_context: context || undefined,
-        questions: questions.filter((q) => q.text.trim()),
-        config: {
-          style,
-          follow_up_depth: followUpDepth,
-          green_flags: greenFlags.split(',').map((s) => s.trim()).filter(Boolean),
-          red_flags: redFlags.split(',').map((s) => s.trim()).filter(Boolean),
-        },
-      })
-      navigate(`/roles/${role.id}`)
+      const result = await generateRole(extracted)
+      clearDraft()
+      navigate(`/roles/${result.role_id}`)
     } catch {
-      alert('Failed to create role')
-    } finally {
-      setLoading(false)
+      alert('Failed to generate agent. Try again.')
+      setGenerating(false)
     }
   }
 
+  const handleClearDraft = () => {
+    clearDraft()
+    setExtracted({})
+    setStatus('gathering')
+    setResumed(false)
+  }
+
   return (
-    <div className="container">
-      <h1>Create Interview Role</h1>
-
-      <label style={{ color: '#888', fontSize: '0.85rem' }}>Role Title *</label>
-      <input
-        placeholder="e.g. Senior Backend Engineer"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-      />
-
-      <label style={{ color: '#888', fontSize: '0.85rem' }}>Company Context</label>
-      <textarea
-        placeholder="Tell the interviewer about your company, team, and what matters..."
-        value={context}
-        onChange={(e) => setContext(e.target.value)}
-      />
-
-      <div className="flex justify-between items-center mb-2">
-        <h2>Questions</h2>
-        <button className="secondary" onClick={addQuestion} style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}>
-          + Add
-        </button>
-      </div>
-
-      {questions.map((q, i) => (
-        <div key={i} className="card flex gap-2 items-center">
-          <div style={{ flex: 1 }}>
-            <input
-              placeholder={`Question ${i + 1}`}
-              value={q.text}
-              onChange={(e) => updateQuestion(i, 'text', e.target.value)}
-              style={{ marginBottom: 0 }}
-            />
-          </div>
-          <div style={{ width: '80px' }}>
-            <select
-              value={q.weight}
-              onChange={(e) => updateQuestion(i, 'weight', parseInt(e.target.value))}
-              style={{
-                background: '#1e1e2e',
-                color: '#e0e0e0',
-                border: '1px solid #333',
-                borderRadius: '8px',
-                padding: '0.75rem',
-                fontSize: '0.9rem',
-              }}
-            >
-              {[1, 2, 3].map((w) => (
-                <option key={w} value={w}>
-                  wt: {w}
-                </option>
-              ))}
-            </select>
-          </div>
-          {questions.length > 1 && (
-            <button
-              className="secondary"
-              onClick={() => removeQuestion(i)}
-              style={{ padding: '0.5rem', fontSize: '0.85rem' }}
-            >
-              ✕
-            </button>
+    <div className="interview-container">
+      <div className="flex justify-between items-center" style={{ padding: '0.5rem 0' }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Set Up Your Interviewer</h2>
+          <span style={{ fontSize: '0.8rem', color: '#888' }}>
+            {generating ? 'Generating your agent...' :
+             status === 'gathering' ? 'Tell me about the role...' :
+             status === 'confirming' ? 'Reviewing your setup...' :
+             status === 'complete' ? 'Ready to generate!' : ''}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          {agentSpeaking && (
+            <span style={{ color: '#6366f1', fontSize: '0.85rem' }}>Speaking...</span>
           )}
+          <span style={{ color: connected ? '#6ee7b7' : '#fca5a5', fontSize: '0.85rem' }}>
+            {connected ? 'Connected' : 'Disconnected'}
+          </span>
         </div>
-      ))}
-
-      <div className="mt-2">
-        <h2>Interview Settings</h2>
-        <div className="flex gap-2 mb-2">
-          <div style={{ flex: 1 }}>
-            <label style={{ color: '#888', fontSize: '0.85rem' }}>Style</label>
-            <select
-              value={style}
-              onChange={(e) => setStyle(e.target.value)}
-              style={{
-                width: '100%',
-                background: '#1e1e2e',
-                color: '#e0e0e0',
-                border: '1px solid #333',
-                borderRadius: '8px',
-                padding: '0.75rem',
-              }}
-            >
-              <option value="conversational">Conversational</option>
-              <option value="structured">Structured</option>
-            </select>
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ color: '#888', fontSize: '0.85rem' }}>Follow-up Depth</label>
-            <select
-              value={followUpDepth}
-              onChange={(e) => setFollowUpDepth(parseInt(e.target.value))}
-              style={{
-                width: '100%',
-                background: '#1e1e2e',
-                color: '#e0e0e0',
-                border: '1px solid #333',
-                borderRadius: '8px',
-                padding: '0.75rem',
-              }}
-            >
-              {[1, 2, 3, 4].map((d) => (
-                <option key={d} value={d}>
-                  {d} follow-up{d > 1 ? 's' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <label style={{ color: '#888', fontSize: '0.85rem' }}>Green Flags (comma-separated)</label>
-        <input
-          placeholder="e.g. asks clarifying questions, mentions trade-offs"
-          value={greenFlags}
-          onChange={(e) => setGreenFlags(e.target.value)}
-        />
-
-        <label style={{ color: '#888', fontSize: '0.85rem' }}>Red Flags (comma-separated)</label>
-        <input
-          placeholder="e.g. vague on details, can't explain decisions"
-          value={redFlags}
-          onChange={(e) => setRedFlags(e.target.value)}
-        />
       </div>
 
-      <button onClick={handleSubmit} disabled={loading || !title.trim()} style={{ width: '100%', marginTop: '1rem' }}>
-        {loading ? 'Creating...' : 'Create Interview Role'}
-      </button>
+      {/* Resumed draft banner */}
+      {resumed && canGenerate && (
+        <div className="card" style={{ marginBottom: '0.5rem', padding: '0.75rem', background: '#1a1a2e', border: '1px solid #6366f1' }}>
+          <div className="flex justify-between items-center">
+            <div style={{ fontSize: '0.85rem' }}>
+              Previous session found: <strong>{extracted.title}</strong> with {extracted.questions?.length} question{(extracted.questions?.length ?? 0) !== 1 ? 's' : ''}
+            </div>
+            <div className="flex gap-1">
+              <button onClick={handleGenerateAgent} disabled={generating} style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}>
+                {generating ? 'Generating...' : 'Generate Agent'}
+              </button>
+              <button className="secondary" onClick={handleClearDraft} style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}>
+                Start Fresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flex: 1, gap: '1rem', overflow: 'hidden' }}>
+        {/* Conversation */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <div className="transcript" ref={transcriptRef} style={{ flex: 1 }}>
+            {messages.map((msg, i) => (
+              <div key={i} className={`message ${msg.speaker === 'agent' ? 'agent' : 'candidate'}`}>
+                <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '0.25rem' }}>
+                  {msg.speaker === 'agent' ? 'AI Assistant' : 'You'}
+                </div>
+                {msg.text}
+              </div>
+            ))}
+            {liveTranscript && (
+              <div className="message candidate" style={{ opacity: 0.5, fontStyle: 'italic' }}>
+                <div className="flex justify-between" style={{ fontSize: '0.75rem', color: '#888', marginBottom: '0.25rem' }}>
+                  <span>You</span>
+                  {sendCountdown != null && (
+                    <span style={{ color: sendCountdown <= 1 ? '#fca5a5' : '#fcd34d' }}>
+                      Sending in {sendCountdown.toFixed(1)}s
+                    </span>
+                  )}
+                </div>
+                {liveTranscript}...
+              </div>
+            )}
+            {thinking && (
+              <div className="message agent" style={{ opacity: 0.6 }}>
+                <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '0.25rem' }}>AI Assistant</div>
+                <span className="thinking-dots">Thinking</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Live extraction sidebar */}
+        <div style={{ width: '280px', flexShrink: 0, overflowY: 'auto' }}>
+          <div className="card" style={{ fontSize: '0.85rem' }}>
+            <h2 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Building Config</h2>
+
+            <div style={{ marginBottom: '0.75rem' }}>
+              <div style={{ color: '#888', fontSize: '0.75rem' }}>Role</div>
+              <div>{extracted.title || '—'}</div>
+            </div>
+
+            <div style={{ marginBottom: '0.75rem' }}>
+              <div style={{ color: '#888', fontSize: '0.75rem' }}>Company</div>
+              <div>{extracted.company_context || '—'}</div>
+            </div>
+
+            <div style={{ marginBottom: '0.75rem' }}>
+              <div style={{ color: '#888', fontSize: '0.75rem' }}>Questions</div>
+              {extracted.questions?.length ? (
+                extracted.questions.map((q, i) => (
+                  <div key={i} style={{ padding: '0.25rem 0', borderBottom: '1px solid #222' }}>
+                    <span>{q.text}</span>
+                    <span className="tag" style={{ marginLeft: '0.5rem', fontSize: '0.7rem' }}>wt:{q.weight}</span>
+                  </div>
+                ))
+              ) : (
+                <span>—</span>
+              )}
+            </div>
+
+            <div style={{ marginBottom: '0.75rem' }}>
+              <div style={{ color: '#888', fontSize: '0.75rem' }}>Style</div>
+              <div>{extracted.style || '—'}</div>
+            </div>
+
+            {(extracted.green_flags?.length ?? 0) > 0 && (
+              <div style={{ marginBottom: '0.5rem' }}>
+                <div style={{ color: '#888', fontSize: '0.75rem' }}>Green Flags</div>
+                {extracted.green_flags!.map((f, i) => (
+                  <span key={i} className="tag" style={{ borderColor: '#065f46', fontSize: '0.75rem' }}>+ {f}</span>
+                ))}
+              </div>
+            )}
+
+            {(extracted.red_flags?.length ?? 0) > 0 && (
+              <div style={{ marginBottom: '0.5rem' }}>
+                <div style={{ color: '#888', fontSize: '0.75rem' }}>Red Flags</div>
+                {extracted.red_flags!.map((f, i) => (
+                  <span key={i} className="tag" style={{ borderColor: '#7f1d1d', fontSize: '0.75rem' }}>- {f}</span>
+                ))}
+              </div>
+            )}
+
+            {/* Generate Agent button */}
+            <button
+              onClick={handleGenerateAgent}
+              disabled={!canGenerate || generating}
+              style={{
+                width: '100%',
+                marginTop: '0.75rem',
+                padding: '0.6rem',
+                fontSize: '0.9rem',
+                opacity: canGenerate && !generating ? 1 : 0.4,
+              }}
+            >
+              {generating ? 'Generating...' : 'Generate Agent'}
+            </button>
+            {!canGenerate && (
+              <div style={{ color: '#555', fontSize: '0.7rem', marginTop: '0.35rem', textAlign: 'center' }}>
+                Need at least a title and one question
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="controls">
+        <button
+          className={`mic-btn ${listening ? 'recording' : ''}`}
+          onClick={toggleListening}
+          disabled={!connected}
+          title={listening ? 'Mute mic' : 'Unmute mic'}
+        >
+          {listening ? '🔴' : '🎤'}
+        </button>
+
+        {listening ? (
+          <div style={{ flex: 1, textAlign: 'center', color: '#888', fontSize: '0.9rem' }}>
+            {agentSpeaking
+              ? 'Agent is speaking — talk to interrupt'
+              : thinking
+                ? 'Processing your response...'
+                : sendCountdown != null
+                  ? `Sending in ${sendCountdown.toFixed(1)}s — keep talking to reset`
+                  : liveTranscript
+                    ? 'Listening...'
+                    : 'Speak naturally — I\'m listening'}
+          </div>
+        ) : (
+          <>
+            <input
+              style={{ flex: 1, marginBottom: 0 }}
+              placeholder="Type or click the mic for voice mode"
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendText()}
+              disabled={!connected}
+            />
+            <button onClick={handleSendText} disabled={!connected || !textInput.trim()} style={{ padding: '0.75rem 1rem' }}>
+              Send
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }
