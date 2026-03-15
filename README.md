@@ -1,4 +1,6 @@
 # AI Interviewer
+<img width="1280" height="573" alt="Screen Shot 2026-03-14 at 10 34 47 PM" src="https://github.com/user-attachments/assets/fe140133-cdc3-416c-80f5-01df332b9a8a" />
+<img width="1222" height="510" alt="Screen Shot 2026-03-14 at 10 34 59 PM" src="https://github.com/user-attachments/assets/939ced54-8701-4da1-9377-a6fcff663f6e" />
 
 AI-powered voice interview platform with real-time authenticity detection.
 
